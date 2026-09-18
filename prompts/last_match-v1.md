@@ -1,0 +1,1 @@
+get all the information provided in the format instructions given to you about this art {artname}
