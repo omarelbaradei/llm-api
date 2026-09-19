@@ -7,11 +7,17 @@ from pydantic import BaseModel ,Field,ValidationError
 from pathlib import Path
 from .schema import template
 import json
+import httpx
+from .retry import retry
+import time
 
 load_dotenv()
 
-
-client = ChatOpenAI(model="openrouter/free",api_key=os.getenv('api_key'),base_url=os.getenv('base_url'))
+client = ChatOpenAI(model="openrouter/free",
+                    api_key=os.getenv('api_key'),
+                    base_url=os.getenv('base_url'),
+                    timeout=int(os.getenv('LLM_TIMEOUT',"30")),
+                    max_retries=0)
 
 prompt=Path("prompts/artprompt-v1.md").read_text(encoding="utf-8")
 
@@ -73,7 +79,10 @@ def validate_output(content:str):
 
                       return {"valid":False,"output":e}
 
-            return {"valid":False,"output":e}              
+            return {"valid":False,"output":e}  
+
+
+                
             
 
 parser = JsonOutputParser(pydantic_object=OutputFormat)
@@ -107,11 +116,43 @@ def matches_history(art_name:ArtRequest):
             "confidence": 1.0
         }
 
+    if os.getenv("LLM_ENABLED") == "False":
+
+          raise HTTPException(status_code=504,details= "the model is currently under some enhancments")
+
+
+    
+
     formatted_prompt = prompt.format(artname = art_name.name)
 
-    first_response = chain.invoke({"prompt":formatted_prompt})    
+    try:
+
+        start=time.perf_counter()
+
+        first_response = retry(lambda:chain.invoke({"prompt":formatted_prompt}),attempt=3)
+
+        duration_ms = (time.perf_counter() - start) * 1000
+
+
+    except Exception as e:
+
+        raise e
+
+    token_usage=first_response.response_metadata["token_usage"]
+
+    input_tokens=token_usage["prompt_tokens"]
+
+    output_tokens=token_usage["completion_tokens"]
+
+    call_cost={"prompt_version":"artprompt-v1","model":"openrouter/free","input_tokens":input_tokens,"output_tokens":output_tokens,"duration_ms":duration_ms}
+
+    with open("logs/llm_prompts",'a',encoding='utf-8') as f:
     
+                    f.write(json.dumps(call_cost)+"\n")
+    
+         
     first_content = first_response.content
+
 
     validation_trial_1=validate_output(first_content)
 
@@ -125,8 +166,31 @@ def matches_history(art_name:ArtRequest):
 
             f.write(formatted_prompt)
 
-        second_response = chain.invoke({"prompt":formatted_prompt})
+        try:
 
+            start=time.perf_counter()
+
+            second_response = retry(lambda:chain.invoke({"prompt":formatted_prompt}),attempt=3)
+
+            duration_ms = (time.perf_counter() - start) * 1000
+                        
+
+        except Exception as e:
+
+            raise e
+
+        token_usage=second_response.response_metadata["token_usage"]
+        
+        input_tokens=token_usage["prompt_tokens"]
+    
+        output_tokens=token_usage["completion_tokens"]
+    
+        call_cost={"prompt_version":"artprompt-v2","model":"openrouter/free","input_tokens":input_tokens,"output_tokens":output_tokens,"duration_ms":duration_ms}
+    
+        with open("logs/llm_prompts",'a',encoding='utf-8') as f:
+        
+                        f.write(json.dumps(call_cost)+"\n")
+        
         second_content = second_response.content
 
         validation_trial_2=validate_output(second_content)
@@ -144,6 +208,7 @@ def matches_history(art_name:ArtRequest):
         return validation_trial_2["output"]
 
     return validation_trial_1["output"]
+
     
 
          
