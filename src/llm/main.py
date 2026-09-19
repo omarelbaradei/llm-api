@@ -46,7 +46,34 @@ class ArtRequest(BaseModel):
      name: str = Field(min_length=2,max_length=400)
 
 
-            
+def validate_output(content:str):
+
+    try:
+        data=OutputFormat.model_validate_json(content)
+
+        return {"valid":True,"output":data}
+
+    except (ValidationError, ValueError) as e:
+
+            start = content.find('{')
+
+            end = content.rfind('}')
+
+            if start !=-1 and end!=-1:
+
+                 try:
+                      cleaned=content[start:end+1]
+
+                      data=OutputFormat.model_validate_json(cleaned)
+
+                      return {"valid":True,"output":data} 
+
+
+                 except (ValidationError , ValueError) as e:
+
+                      return {"valid":False,"output":e}
+
+            return {"valid":False,"output":e}              
             
 
 parser = JsonOutputParser(pydantic_object=OutputFormat)
@@ -86,7 +113,37 @@ def matches_history(art_name:ArtRequest):
     
     first_content = first_response.content
 
-    return first_content
+    validation_trial_1=validate_output(first_content)
+
+    if  not validation_trial_1["valid"] :
+
+        repairing_prompt = f' your_wrong_pervious_output is {first_content}, the error shown {validation_trial_1["output"]} , Your previous answer was rejected for this reason. Return only corrected JSON matching the schema'
+
+        formatted_prompt=formatted_prompt+repairing_prompt
+
+        with open("prompts/artprompt-v2.md",'w',encoding='utf-8') as f:
+
+            f.write(formatted_prompt)
+
+        second_response = chain.invoke({"prompt":formatted_prompt})
+
+        second_content = second_response.content
+
+        validation_trial_2=validate_output(second_content)
+
+        if not validation_trial_2["valid"]:
+
+            waste={"output":second_content,"input":art_name.name,"error":validation_trial_2["output"],"prompt_version":"artprompt-v2"}
+
+            with open("logs/quarantine.jsonl",'a',encoding='utf-8') as f:
+
+                f.write(json.dumps(waste)+"\n")
+
+            raise HTTPException(status_code=442,detail="After trying for the second time there still something going wrong try to add a stronger system messege 💪🏼")
+
+        return validation_trial_2["output"]
+
+    return validation_trial_1["output"]
     
 
          
