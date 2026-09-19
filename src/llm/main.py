@@ -1,18 +1,19 @@
 import os
 from langchain_openai import ChatOpenAI
 from dotenv import load_dotenv
-from fastapi import FastAPI 
+from fastapi import FastAPI ,HTTPException
 from langchain_core.output_parsers import JsonOutputParser
-from pydantic import BaseModel ,Field
+from pydantic import BaseModel ,Field,ValidationError
 from pathlib import Path
 from .schema import template
+import json
 
 load_dotenv()
 
 
 client = ChatOpenAI(model="openrouter/free",api_key=os.getenv('api_key'),base_url=os.getenv('base_url'))
 
-prompt=Path("prompts/last_match-v1.md").read_text(encoding="utf-8")
+prompt=Path("prompts/artprompt-v1.md").read_text(encoding="utf-8")
 
 
 class Actor(BaseModel):
@@ -38,18 +39,21 @@ class OutputFormat(BaseModel):
     confidence:float = Field(description=" how confident the model is about its answer")
 
 
+
+
 class ArtRequest(BaseModel):
 
      name: str = Field(min_length=2,max_length=400)
 
 
+            
+            
 
 parser = JsonOutputParser(pydantic_object=OutputFormat)
 
 format_instructions=parser.get_format_instructions()
 
 template=template.partial(format_instruction=format_instructions)
-
 
 chain = template | client 
 
@@ -65,7 +69,7 @@ def matches_history(art_name:ArtRequest):
             "name_of_act": "The Godfather",
             "art_type": "movie",
             "category": "crime drama",
-            "year": 1972,
+            "release_year": 1972,
             "director": "Francis Ford Coppola",
             "actors": [
                 {"name": "Marlon Brando"},
@@ -78,7 +82,12 @@ def matches_history(art_name:ArtRequest):
 
     formatted_prompt = prompt.format(artname = art_name.name)
 
-    response = chain.invoke({"prompt":formatted_prompt})    
+    first_response = chain.invoke({"prompt":formatted_prompt})    
     
-    return response.content
+    first_content = first_response.content
+
+    return first_content
+    
+
+         
 

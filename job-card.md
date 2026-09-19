@@ -8,11 +8,11 @@ Output: {"name_of_act" : one [mission impossible]
 
     "category": one [commedy|action|sci-fi|drama]
 
-    "date": one [1992|2012|...]
+    "release_year": one [1992 | 2012 | ...]
 
-    "director": one [nolan|...]
+    "director": one [nolan | ...]
 
-    "actors": 4 maximum 
+    "actors": 4 maximum [Tom Criuse | Leonardo Dicaprio | Julia Roberts|....]
 
     "confidence: 0 to 1
 }
